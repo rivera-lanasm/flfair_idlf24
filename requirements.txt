@@ -1,0 +1,9 @@
+ipywidgets
+numpy
+pandas
+scikit-learn
+torch
+kaggle
+flwr[simulation]
+wandb
+flwr-datasets[vision]
