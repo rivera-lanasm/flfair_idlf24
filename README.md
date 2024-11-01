@@ -13,5 +13,5 @@ Please keep things organized.
 - [x] Implement Dirichlet Partitioning for Heterogeneous Data
 - [x] Implement EOD metrics
     - [ ] Someone needs to check if the implementation is correct
-- [ ] Implement FairFed Strategy
+- [x] Implement FairFed Strategy
 - [ ] Implement Local Debiasing (Reweighting)
