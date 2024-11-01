@@ -5,5 +5,7 @@ FedAvg takes the 100 model updates and, as the name suggests, averages them. To 
 
 ### Aggregations functions
 
+Flower can automatically aggregate losses returned by individual clients, but it cannot do the same for metrics in the generic metrics dictionary (the one with the accuracy key). Metrics dictionaries can contain very different kinds of metrics and even key/value pairs that are not metrics at all, so the framework does not (and can not) know how to handle these automatically.
 
+As users, we need to tell the framework how to handle/aggregate these custom metrics, and we do so by passing metric aggregation functions to the strategy. The strategy will then call these functions whenever it receives fit or evaluate metrics from clients. The two possible functions are fit_metrics_aggregation_fn and evaluate_metrics_aggregation_fn.
 
