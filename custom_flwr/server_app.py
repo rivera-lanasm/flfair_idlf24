@@ -12,12 +12,13 @@ that Flower uses to call all your server-side code (for example, the strategy)
 """
 
 import torch
-from custom_flwr.strategy import CustomFedAvg
+from custom_flwr.strategy import FairFed
 from custom_flwr.task import (
     Net,
     get_weights,
     set_weights,
     test,
+    get_test_data
 )
 from torch.utils.data import DataLoader
 
@@ -64,7 +65,7 @@ def weighted_average(metrics):
     return {"federated_evaluate_accuracy": sum(accuracies) / sum(examples)}
 
 
-def server_fn(context, testloader):
+def server_fn(context):
     # Read from config
     num_rounds = context.run_config["num-server-rounds"]
     fraction_fit = context.run_config["fraction-fit"]
@@ -74,22 +75,21 @@ def server_fn(context, testloader):
     # Initialize model parameters
     ndarrays = get_weights(Net())
     parameters = ndarrays_to_parameters(ndarrays)
+    testloader = get_test_data()
 
     # Define strategy
-    strategy = CustomFedAvg(
-        run_config=context.run_config,
-        use_wandb=context.run_config["use-wandb"],
+    strategy = FairFed(
         fraction_fit=fraction_fit,
         fraction_evaluate=fraction_eval,
         initial_parameters=parameters,
         on_fit_config_fn=on_fit_config,
         evaluate_fn=gen_evaluate_fn(testloader, device=server_device),
-        evaluate_metrics_aggregation_fn=weighted_average # <-- pass the metric aggregation function
+        evaluate_metrics_aggregation_fn=weighted_average,
+        beta=0.1
     )
 
     config = ServerConfig(num_rounds=num_rounds)
 
     return ServerAppComponents(strategy=strategy, 
                                config=config)
-
 

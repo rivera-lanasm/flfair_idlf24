@@ -1,34 +1,9 @@
-"""pytorch-example: A Flower / PyTorch app
-
-Our class FlowerClient defines how local training/evaluation will be 
-performed and allows Flower to call the local training/evaluation 
-through fit and evaluate. 
-
-Each instance of FlowerClient represents a single client in our federated 
-learning system. Federated learning systems have multiple 
-clients (otherwise, there’s not much to federate), so each client 
-will be represented by its own instance of FlowerClient. 
-
-If we have, for example, three clients in our workload, then we’d have 
-three instances of FlowerClient (one on each of the machines we’d 
-start the client on). 
-
-Flower calls FlowerClient.fit on the respective instance when the
- server selects a particular client for training (and FlowerClient.evaluate for evaluation).
-
-n federated learning experiments using Flower, clients are identified by 
-a partition ID, or partition-id. This partition-id is used to load
- different local data partitions for different clients, as can be seen
-   below. 
-   
-   The value of partition-id is retrieved from the node_config dictionary in the Context 
-   object, which holds the information that persists throughout each training round.
- 
-
+"""
+pytorch-example: A Flower / PyTorch app
 """
 
 import torch
-from pytorch_example.task import Net, get_weights, load_data, set_weights, test, train
+from custom_flwr.task import Net, get_weights, set_weights, test, train, get_train_data, get_val_data
 
 from flwr.client import ClientApp, NumPyClient
 from flwr.common import Context, ParametersRecord, RecordSet, array_from_numpy
@@ -73,7 +48,7 @@ class FlowerClient(NumPyClient):
         # had at the end of the last fit() round it participated in
         self._load_layer_weights_from_state()
 
-        train_loss = train(
+        train_loss, eod = train(
             self.net,
             self.trainloader,
             self.local_epochs,
@@ -87,7 +62,7 @@ class FlowerClient(NumPyClient):
         return (
             get_weights(self.net),
             len(self.trainloader.dataset),
-            {"train_loss": train_loss},
+            {"train_loss": train_loss, "eod": eod},
         )
 
     def _save_layer_weights_to_state(self):
@@ -127,9 +102,8 @@ class FlowerClient(NumPyClient):
         # Override weights in classification layer with those this client
         # had at the end of the last fit() round it participated in
         self._load_layer_weights_from_state()
-        loss, accuracy = test(self.net, self.valloader, self.device)
-        return loss, len(self.valloader.dataset), {"accuracy": accuracy}
-
+        loss, accuracy, eod = test(self.net, self.valloader, self.device)
+        return loss, len(self.valloader.dataset), {"accuracy": accuracy, "eod": eod}
 
 def client_fn(context: Context):
     """
@@ -148,17 +122,11 @@ def client_fn(context: Context):
     """
     # Load model and data
     net = Net()
-    # parittion id load
-        # Note: each client gets a different trainloader/valloader, so each client
-        # will train and evaluate on their own unique data partition
-        # Read the node_config to fetch data partition associated to this node
-    partition_id = context.node_config["partition-id"]
-    # number of clients / partitions
-    num_partitions = context.node_config["num-partitions"]
-    # data loaders
-    trainloader, valloader = load_data(partition_id, num_partitions)
     # local epochs
-    local_epochs = context.run_config["local-epochs"]
+    local_epochs = 1
+    trainloader = get_train_data(context.node_config['partition-id'])
+    valloader = get_val_data(context.node_config['partition-id'])
+    # Load data
 
     # Return Client instance
     # We pass the state to persist information across
@@ -168,7 +136,6 @@ def client_fn(context: Context):
     return FlowerClient(
         net, client_state, trainloader, valloader, local_epochs
     ).to_client()
-
 
 # Flower ClientApp
 app = ClientApp(

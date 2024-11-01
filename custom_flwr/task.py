@@ -9,11 +9,98 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from flwr_datasets.partitioner import DirichletPartitioner
-
+from datasets import Dataset
+import pandas as pd
 from flwr.common.typing import UserConfig
+from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader, TensorDataset
+
+def load_data():
+    global train_loaders, val_loaders, test_loader
+
+    if 'trainloaders' in globals():
+        return train_loaders, val_loaders, test_loader
+    df = pd.read_csv('.kaggle/data/propublicaCompassRecividism_data_fairml.csv/propublica_data_for_fairml.csv')
+    df['caucasian'] = ((df['African_American'] + df['Asian'] + df['Hispanic'] + df['Native_American'] + df['Other']) == 0).astype(int)
+    NUM_CLIENTS = 10
+    trainset, testset = train_test_split(df, test_size=0.2)
+    batch_size = 32
+
+    ds = Dataset.from_pandas(trainset)
+    partitioner = DirichletPartitioner(
+        num_partitions=NUM_CLIENTS,
+        partition_by="caucasian",
+        alpha=0.5,
+        min_partition_size=(len(trainset) // (4 * NUM_CLIENTS)),
+        self_balancing=True,
+        shuffle=True
+    )
+
+    partitioner.dataset = ds
+    datasets = []
+    for i in range(NUM_CLIENTS):
+        curr_partition = partitioner.load_partition(i)
+        datasets.append(curr_partition.to_pandas())
+
+    train_loaders = []
+    val_loaders = []
+
+    feature_columns = ['Number_of_Priors', 'score_factor','Age_Above_FourtyFive', 'Age_Below_TwentyFive', 'Misdemeanor']
+
+    for ds in datasets:
+        train_x = ds[feature_columns].values
+        train_y = ds['Two_yr_Recidivism'].values
+        sensitive_feature = ds['caucasian'].values
+
+        train_x, val_x, train_y, val_y, sensitive_train, sensitive_val = train_test_split(
+            train_x, train_y, sensitive_feature, test_size=0.25, shuffle=True, stratify=train_y, random_state=42
+        )
+        
+        train_x_tensor = torch.from_numpy(train_x).float()
+        train_y_tensor = torch.from_numpy(train_y).float()
+        sensitive_train_tensor = torch.from_numpy(sensitive_train).float()
+
+        valid_x_tensor = torch.from_numpy(val_x).float()
+        valid_y_tensor = torch.from_numpy(val_y).float()
+        sensitive_val_tensor = torch.from_numpy(sensitive_val).float()
+
+        # Create TensorDataset and DataLoader, including the sensitive attribute
+        train_dataset = TensorDataset(train_x_tensor, train_y_tensor, sensitive_train_tensor)
+        valid_dataset = TensorDataset(valid_x_tensor, valid_y_tensor, sensitive_val_tensor)
+
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        val_loader = DataLoader(valid_dataset, batch_size=batch_size)
+
+        train_loaders.append(train_loader)
+        val_loaders.append(val_loader)
+
+    # For test data
+    test_x = testset[feature_columns].values
+    test_y = testset['Two_yr_Recidivism'].values
+    sensitive_test = testset['caucasian'].values
+
+    test_x_tensor = torch.from_numpy(test_x).float()
+    test_y_tensor = torch.from_numpy(test_y).float()
+    sensitive_test_tensor = torch.from_numpy(sensitive_test).float()
+
+    test_dataset = TensorDataset(test_x_tensor, test_y_tensor, sensitive_test_tensor)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size)
+
+    return train_loaders, val_loaders, test_loader
+
+def get_train_data(partition_id):
+    train_loaders, _, _ = load_data()
+    return train_loaders[partition_id]
+
+def get_val_data(partition_id):
+    _, val_loaders, _ = load_data()
+    return val_loaders[partition_id]
+
+def get_test_data():
+    _, _, test_loader = load_data()
+    return test_loader
 
 class Net(nn.Module):
-    """Model (simple CNN adapted for Fashion-MNIST)"""
     def __init__(self):
         super().__init__()
         self.fc1 = nn.Linear(5, 16)
@@ -119,12 +206,10 @@ def get_weights(net):
 def set_weights(net, parameters):
     """
     helper function: update the local model with parameters received from the server
-    
     """
     params_dict = zip(net.state_dict().keys(), parameters)
     state_dict = OrderedDict({k: torch.tensor(v) for k, v in params_dict})
     net.load_state_dict(state_dict, strict=True)
-
 
 fds = None  # Cache FederatedDataset
 

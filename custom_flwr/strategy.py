@@ -115,3 +115,31 @@ class CustomFedAvg(FedAvg):
             results_dict={"federated_evaluate_loss": loss, **metrics},
         )
         return loss, metrics
+
+class FairFed(FedAvg):
+    def __init__(self, *args, **kwargs):
+        self.beta = kwargs.pop("beta", 0.1)
+        super().__init__(*args, **kwargs)
+        
+    def aggregate_evaluate(self, server_round, results, failures):
+        eod_scores = [r.metrics["eod"] for _,r in results if 'eod' in r.metrics]
+        client_sizes = [r.num_examples for _,r in results]
+
+        avg_eod = sum(eod_scores) / len(eod_scores) if eod_scores else 0
+        adjusted_weights = []
+        for eod, num_examples in zip(eod_scores, client_sizes):
+            dev = abs(eod - avg_eod)
+            adjusted_weight = max(1 - self.beta * dev, 0)
+            adjusted_weights.append(adjusted_weight)
+
+        total_weight = sum(adjusted_weights)
+        norm_weights = [w / total_weight for w in adjusted_weights]
+
+        aggregated_metrics = {
+            'eod': sum(w * eod for w, eod in zip(norm_weights, eod_scores)),
+        }
+        loss, metrics = super().aggregate_evaluate(server_round, results, failures)
+        metrics.update(aggregated_metrics)
+        print(f"Aggregated EOD: {aggregated_metrics['eod']}")
+        return loss, metrics
+    
