@@ -122,14 +122,25 @@ class FairFed(FedAvg):
         super().__init__(*args, **kwargs)
         
     def aggregate_evaluate(self, server_round, results, failures):
+        """
+        
+        
+        """
         eod_scores = [r.metrics["eod"] for _,r in results if 'eod' in r.metrics]
         client_sizes = [r.num_examples for _,r in results]
 
+        # global EOD
         avg_eod = sum(eod_scores) / len(eod_scores) if eod_scores else 0
+        # glbal Acc.
+        # TODO 
+        # init adj
         adjusted_weights = []
         for eod, num_examples in zip(eod_scores, client_sizes):
+            # delta
             dev = abs(eod - avg_eod)
+            # 
             adjusted_weight = max(1 - self.beta * dev, 0)
+            # 
             adjusted_weights.append(adjusted_weight)
 
         total_weight = sum(adjusted_weights)

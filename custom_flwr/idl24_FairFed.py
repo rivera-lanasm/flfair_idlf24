@@ -17,9 +17,13 @@
 Paper: arxiv.org/abs/1602.05629
 """
 
-
+import numpy as np
+from functools import reduce
 from logging import WARNING
-from typing import Callable, Optional, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
+import json
+import statistics
+
 
 from flwr.common import (
     EvaluateIns,
@@ -40,6 +44,7 @@ from flwr.server.client_proxy import ClientProxy
 from .aggregate import aggregate, aggregate_inplace, weighted_loss_avg
 from .strategy import Strategy
 
+
 WARNING_MIN_AVAILABLE_CLIENTS_TOO_LOW = """
 Setting `min_available_clients` lower than `min_fit_clients` or
 `min_evaluate_clients` can cause the server to fail when there are too few clients
@@ -48,8 +53,83 @@ than or equal to the values of `min_fit_clients` and `min_evaluate_clients`.
 """
 
 
+def aggregate_fair(weights, results, beta) -> NDArrays:
+    """Compute weighted average."""
+    # client EOD metrics
+    list_eod = [eod for params, num_examples, id, acc, eod in results]
+    # Aggregate (Global) EOD metric stats
+    avg_eod = 0 if len(list_eod) == 0 else np.mean(list_eod)
+    max_eod = 0 if len(list_eod) == 0 else max(list_eod)
+
+    # client Accuracy metrics
+    list_acc = [acc for params, num_examples, id, acc, eod in results]
+    # Aggregate (Global) Acc metric stats
+    avg_acc = 0 if len(list_acc) == 0 else np.mean(list_acc)
+    max_acc = 0 if len(list_acc) == 0 else max(list_acc)
+
+    # capture client deltas
+    client_deltas = {}
+    for client, res in enumerate(results):
+        # unpack 
+        params, num_examples, id, acc, eod = res
+        # rename metrics
+        metric, avg_metric = eod, avg_eod 
+        # use accuracy when metric not avail
+        if np.isnan(metric):
+            metric = acc
+            avg_metric = avg_acc
+        # client delta
+        delta = abs(metric - avg_metric)
+        client_deltas[id] = delta
+
+    # average delta, equation 6
+    ave_delta = np.mean(list(client_deltas.values))
+
+    # calculate new client parameter weights (unnormalized)
+    new_weight = []
+    for client, res in enumerate(results):
+        # unpack 
+        params, num_examples, id, acc, eod = res
+        # rename metrics
+        metric, avg_metric = eod, avg_eod
+        # adjusted weight
+        weight_update = -beta*(client_deltas[id] - ave_delta)
+        weights[id] = weights[id] + weight_update  
+
+    # normalize updated weights, equation 6
+    weight_norm_factor = np.sum(list(weights.values()))
+    for key, val in weights.items():
+        normalized_weight = val/weight_norm_factor
+        weights[key] = normalized_weight
+        new_weight.append(weights[key])
+
+    # weighting the paramters for each client by new_weights
+    weighted_weights = [
+        [layer * new_weight[client] for layer in res[0]] for client, res in enumerate(results)
+    ]
+    # 
+    weights_prime: NDArrays = [
+        reduce(np.add, layer_updates) for layer_updates in zip(*weighted_weights)
+    ]
+    return weights, weights_prime
+
+
+def fedavg_weights(results: List[Tuple[NDArrays, int]]) -> NDArrays:
+    """
+    INITIALIZE weight as num_examples_i / total number examples
+    """
+    # Calculate the total number of examples used during training
+    num_examples_total = sum([num_examples for params, num_examples, id, acc, eosd, wtpr, apsd in results])
+    # Create a list of weights, each multiplied by the related number of examples
+    weights = {}
+    for params, num_examples, id, acc, eosd, wtpr, apsd in results:
+        weights[id] = num_examples / num_examples_total
+
+    return weights
+
+
 # pylint: disable=line-too-long
-class FedAvg(Strategy):
+class CustomFairFed(Strategy):
     """Federated Averaging strategy.
 
     Implementation based on https://arxiv.org/abs/1602.05629
@@ -110,6 +190,8 @@ class FedAvg(Strategy):
         fit_metrics_aggregation_fn: Optional[MetricsAggregationFn] = None,
         evaluate_metrics_aggregation_fn: Optional[MetricsAggregationFn] = None,
         inplace: bool = True,
+        # betas
+        beta: float
     ) -> None:
         super().__init__()
 
@@ -132,6 +214,7 @@ class FedAvg(Strategy):
         self.fit_metrics_aggregation_fn = fit_metrics_aggregation_fn
         self.evaluate_metrics_aggregation_fn = evaluate_metrics_aggregation_fn
         self.inplace = inplace
+        self.beta = beta
 
     def __repr__(self) -> str:
         """Compute a string representation of the strategy."""
@@ -230,18 +313,27 @@ class FedAvg(Strategy):
         if not self.accept_failures and failures:
             return None, {}
 
-        if self.inplace:
-            # Does in-place weighted average of results
-            aggregated_ndarrays = aggregate_inplace(results)
-        else:
-            # Convert results
-            weights_results = [
-                (parameters_to_ndarrays(fit_res.parameters), fit_res.num_examples)
-                for _, fit_res in results
-            ]
-            aggregated_ndarrays = aggregate(weights_results)
+        # Convert results
+        weights_results = [
+            (parameters_to_ndarrays(fit_res.parameters), 
+             fit_res.num_examples, 
+             fit_res.metrics['id'], 
+             fit_res.metrics['acc'], 
+             fit_res.metrics['eod'])
+                for _, fit_res in results]
 
-        parameters_aggregated = ndarrays_to_parameters(aggregated_ndarrays)
+        # Initialize current_weights in first server round
+        if server_round == 1:
+            self.current_weights = fedavg_weights(weights_results)
+
+        # weighted average of client parameters
+        weights, parameters_aggregated = aggregate_fair(weights = self.current_weights, 
+                                                        results = weights_results, 
+                                                        beta = self.beta)
+        parameters_aggregated = ndarrays_to_parameters(parameters_aggregated)
+
+        # weights is returned by aggregate_fair so we can do this update
+        self.current_weights = weights
 
         # Aggregate custom metrics if aggregation fn was provided
         metrics_aggregated = {}

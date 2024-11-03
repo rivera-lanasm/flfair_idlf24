@@ -58,37 +58,50 @@ than or equal to the values of `min_fit_clients` and `min_evaluate_clients`.
 
 def aggregate_fair(weights, results, beta) -> NDArrays:
     """Compute weighted average."""
-    list_eosd = [eosd for params, num_examples, id, acc, eosd, wtpr, apsd in results if eosd > 0]
-    list_wtpr = [1 - wtpr for params, num_examples, id, acc, eosd, wtpr, apsd in results]
-    list_apsd = [apsd for params, num_examples, id, acc, eosd, wtpr, apsd in results if apsd > 0]
+    # client EOD metrics
+    list_eod = [eod for params, num_examples, id, acc, eod in results]
+    # Aggregate (Global) EOD metric stats
+    avg_eod = 0 if len(list_eod) == 0 else np.mean(list_eod)
+    max_eod = 0 if len(list_eod) == 0 else max(list_eod)
 
-    avg_eosd = 0 if len(list_eosd) == 0 else np.mean(list_eosd)
-    max_eosd = 0 if len(list_eosd) == 0 else max(list_eosd)
-    avg_wtpr = 0 if len(list_eosd) == 0 else np.mean(list_wtpr)
-    max_wtpr = 0 if len(list_eosd) == 0 else max(list_wtpr)
-    avg_apsd = 0 if len(list_eosd) == 0 else np.mean(list_apsd)
-    max_apsd = 0 if len(list_eosd) == 0 else max(list_apsd)
+    # client Accuracy metrics
+    list_eod = [eod for params, num_examples, id, acc, eod in results]
+    # Aggregate (Global) EOD metric stats
+    avg_eod = 0 if len(list_eod) == 0 else np.mean(list_eod)
+    max_eod = 0 if len(list_eod) == 0 else max(list_eod)
+
+    # calculate new client parameter weights
     new_weight = []
     for client, res in enumerate(results):
-        params, num_examples, id, acc, eosd, wtpr, apsd = res
-
-        metric, avg_metric, max_metric = 1 - wtpr, avg_wtpr, max_wtpr #apsd, avg_apsd, max_apsd  || 1 - wtpr, avg_wtpr, max_wtpr # || eosd, avg_eosd, max_eosd
+        # unpack 
+        params, num_examples, id, acc, eod = res
+        # rename metrics
+        metric, avg_metric, max_metric = eod, avg_eod, max_eod 
+        # TODO --> is this a mistake? don't we use accuracy when metric not avail
         metric = metric if metric > 0 else avg_metric
+        # is this correct imple,entation of delta?
         weights[id] += beta * (max_metric-metric)
         new_weight.append(weights[id])
+    # for each client
     for id in weights:
+        # this is equation 6
         weights[id] /= sum(new_weight)
     new_weight = [w / sum(new_weight) for w in new_weight]
 
+    # weighting the paramters for each client by new_weights
     weighted_weights = [
         [layer * new_weight[client] for layer in res[0]] for client, res in enumerate(results)
     ]
+    # 
     weights_prime: NDArrays = [
         reduce(np.add, layer_updates) for layer_updates in zip(*weighted_weights)
     ]
     return weights, weights_prime
 
 def fedavg_weights(results: List[Tuple[NDArrays, int]]) -> NDArrays:
+    """
+    INITIALIZE weight as num_examples_i / total number examples
+    """
     # Calculate the total number of examples used during training
     num_examples_total = sum([num_examples for params, num_examples, id, acc, eosd, wtpr, apsd in results])
     # Create a list of weights, each multiplied by the related number of examples
@@ -319,6 +332,7 @@ class FairFedAvg(Strategy):
             for _, fit_res in results
         ]
 
+        # ----------- LOGGIN REASONS -------------# 
         total_acc = 0
         total_acc_val = 0
         avg_fair = 0
@@ -330,17 +344,25 @@ class FairFedAvg(Strategy):
             num += client.num_examples
             num_val += client.metrics['num_val']
         print('Training Accuracy: ' + str(total_acc / num) + ', Validation Accuracy: ' + str(total_acc_val / num_val))
+        # ----------- LOGGIN REASONS -------------# 
 
         if server_round == 1:
             self.current_weights = fedavg_weights(weights_results)
-        self.current_weights = fedavg_weights(weights_results)
+        # TODO --> is this a mistake?
+        # self.current_weights = fedavg_weights(weights_results)
+
+        # TODO --> aggregated fair
         weights, parameters_aggregated = aggregate_fair(self.current_weights, weights_results, 1)
         parameters_aggregated = ndarrays_to_parameters(parameters_aggregated)
+        
+        # weights is returned by aggregate_fair so we can do this update
         self.current_weights = weights
 
+        # round checkpoint 
         if parameters_aggregated is not None:
             print(f"Saving round {server_round} aggregated_ndarrays...")
             np.savez(f"checkpoints/round-{server_round}-weights.npz", parameters_aggregated)
+        
         # Aggregate custom metrics if aggregation fn was provided
         metrics_aggregated = {}
         if self.fit_metrics_aggregation_fn:

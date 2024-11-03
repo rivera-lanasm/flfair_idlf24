@@ -129,6 +129,8 @@ def train(net, trainloader, epochs, lr, device):
     optimizer = optim.Adam(net.parameters(), lr=lr)
     net.train()
     running_loss = 0.0
+    total = 0
+    correct = 0
     
     # Store predictions and sensitive features for EOD calculation
     all_preds, all_labels, all_sensitives = [], [], []
@@ -138,7 +140,12 @@ def train(net, trainloader, epochs, lr, device):
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
             outputs = net(inputs)
+            # accuracy
+            predicted = (outputs >= 0.5).float()
             labels = labels.view(-1, 1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+            # loss
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
@@ -156,9 +163,14 @@ def train(net, trainloader, epochs, lr, device):
     
     # Calculate EOD
     eod = compute_eod(all_preds, all_labels, all_sensitives)
+    # avg training loss 
     avg_trainloss = running_loss / len(trainloader)
-    print(f"Avg Train Loss: {avg_trainloss} - EOD: {eod}")
-    return avg_trainloss, eod
+    # avg accuracy
+    accuracy = correct / total
+    
+    print(f"Avg Train Loss: {avg_trainloss} - EOD: {eod} - Accuracy: {accuracy}")
+    return avg_trainloss, eod, accuracy
+
 
 def test(net, testloader, device):
     """Validate the model on the test set and calculate EOD."""

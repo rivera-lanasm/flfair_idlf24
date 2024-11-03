@@ -48,7 +48,7 @@ class FlowerClient(NumPyClient):
         # had at the end of the last fit() round it participated in
         self._load_layer_weights_from_state()
 
-        train_loss, eod = train(
+        train_loss, eod, acc = train(
             self.net,
             self.trainloader,
             self.local_epochs,
@@ -60,9 +60,12 @@ class FlowerClient(NumPyClient):
 
         # Return locally-trained model and metrics
         return (
+            # model paramters
             get_weights(self.net),
+            # size of client data 
             len(self.trainloader.dataset),
-            {"train_loss": train_loss, "eod": eod},
+            # metrics
+            {"train_loss": train_loss, "eod": eod, "acc": acc},
         )
 
     def _save_layer_weights_to_state(self):

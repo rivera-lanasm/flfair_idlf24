@@ -3,3 +3,4 @@
 .kaggle/*
 *.zip
 outputs/*
+*.pth
