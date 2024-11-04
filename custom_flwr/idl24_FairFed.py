@@ -24,7 +24,6 @@ from typing import Callable, Dict, List, Optional, Tuple, Union
 import json
 import statistics
 
-
 from flwr.common import (
     EvaluateIns,
     EvaluateRes,
@@ -72,16 +71,14 @@ def aggregate_fair(weights, results, beta) -> NDArrays:
     # capture client deltas
     client_deltas = {}
     for client, res in enumerate(results):
-        # unpack 
         params, num_examples, id, acc, eod = res
-        # rename metrics
         metric, avg_metric = eod, avg_eod 
-        # use accuracy when metric not avail
+        # Use accuracy when metric is NaN
         if np.isnan(metric):
             metric = acc
             avg_metric = avg_acc
-        # client delta
-        delta = abs(metric - avg_metric)
+        # Use np.nan_to_num to handle NaNs in delta calculation
+        delta = abs(np.nan_to_num(metric - avg_metric, nan=0.0))
         client_deltas[id] = delta
 
     # average delta, equation 6
@@ -95,12 +92,16 @@ def aggregate_fair(weights, results, beta) -> NDArrays:
         metric, avg_metric = eod, avg_eod
         # adjusted weight
         weight_update = -beta*(client_deltas[id] - ave_delta)
-        weights[id] = weights[id] + weight_update  
+        if id in weights:
+            weights[id] = weights[id] + weight_update
+        else:
+            weights[id] = weight_update
 
     # normalize updated weights, equation 6
-    weight_norm_factor = np.sum(list(weights.values()))
+    # Normalize updated weights, handling NaNs if present
+    weight_norm_factor = np.sum(np.nan_to_num(list(weights.values()), nan=0.0))
     for key, val in weights.items():
-        normalized_weight = val/weight_norm_factor
+        normalized_weight = np.nan_to_num(val / weight_norm_factor, nan=0.0)
         weights[key] = normalized_weight
         # new_weight.append(weights[key])
 
@@ -108,7 +109,10 @@ def aggregate_fair(weights, results, beta) -> NDArrays:
     weighted_weights = []
     for res in results:
         params, num_examples, id, acc, eod = res
-        weighted_weights.append( [layer * weights[id] for layer in params] )
+        if id in weights:
+            weighted_weights.append([layer * weights[id] for layer in params] )
+        else:
+            weighted_weights.append([layer * 0 for layer in params] )
 
     # weighted_weights = [
     #     [layer * new_weight[client] for layer in res[0]] for client, res in enumerate(results)
@@ -318,18 +322,34 @@ class CustomFairFed(Strategy):
         if not self.accept_failures and failures:
             return None, {}
 
-        # Convert results
+        print("LOGG: RESULTS")
+        for res in results:
+            print(res[1].metrics, res[1].num_examples)
+
+        # Convert results with NaN handling for each individual array
         weights_results = [
-            (parameters_to_ndarrays(fit_res.parameters), 
-             fit_res.num_examples, 
-             fit_res.metrics['id'],
-             fit_res.metrics['acc'], 
-             fit_res.metrics['eod'])
-                for _, fit_res in results]
+            (
+                [np.nan_to_num(layer, nan=0.0) for layer in parameters_to_ndarrays(fit_res.parameters)],  # Handle NaNs in each layer
+                fit_res.num_examples,
+                fit_res.metrics['id'],
+                np.nan_to_num(fit_res.metrics['acc'], nan=0.0),  # Replace NaNs in accuracy
+                np.nan_to_num(fit_res.metrics['eod'], nan=0.0)   # Replace NaNs in EOD
+            )
+            for _, fit_res in results
+        ]
+
+        if not weights_results:
+            return None, {}
+
 
         # Initialize current_weights in first server round
         if server_round == 1:
+            print("============= LOGGG USING FEDAVG WEIGHTS")
             self.current_weights = fedavg_weights(weights_results)
+
+        print("============= LOGGG WEIGHT RESULTS")
+        print([val[2] for val in weights_results])
+        print(self.current_weights)
 
         # weighted average of client parameters
         weights, parameters_aggregated = aggregate_fair(weights = self.current_weights, 
