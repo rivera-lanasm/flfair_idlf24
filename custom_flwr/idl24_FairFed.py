@@ -317,7 +317,7 @@ class CustomFairFed(Strategy):
         weights_results = [
             (parameters_to_ndarrays(fit_res.parameters), 
              fit_res.num_examples, 
-            #  fit_res.metrics['id'], 
+             fit_res.metrics['id'], 
              fit_res.metrics['acc'], 
              fit_res.metrics['eod'])
                 for _, fit_res in results]
