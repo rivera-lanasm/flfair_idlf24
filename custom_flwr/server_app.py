@@ -64,7 +64,7 @@ def weighted_average(metrics):
     examples = [num_examples for num_examples, _ in metrics]
 
     # Aggregate and return custom metric (weighted average)
-    return {"federated_evaluate_accuracyyyy": sum(accuracies) / sum(examples)}
+    return {"federated_evaluate_accuracy": sum(accuracies) / sum(examples)}
 
 
 def server_fn(context):

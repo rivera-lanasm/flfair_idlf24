@@ -87,7 +87,7 @@ def aggregate_fair(weights, results, beta) -> NDArrays:
     ave_delta = np.mean(list(client_deltas.values()))
 
     # calculate new client parameter weights (unnormalized)
-    new_weight = []
+    # new_weight = {}
     for client, res in enumerate(results):
         # unpack 
         params, num_examples, id, acc, eod = res
@@ -102,12 +102,17 @@ def aggregate_fair(weights, results, beta) -> NDArrays:
     for key, val in weights.items():
         normalized_weight = val/weight_norm_factor
         weights[key] = normalized_weight
-        new_weight.append(weights[key])
+        # new_weight.append(weights[key])
 
     # weighting the paramters for each client by new_weights
-    weighted_weights = [
-        [layer * new_weight[client] for layer in res[0]] for client, res in enumerate(results)
-    ]
+    weighted_weights = []
+    for res in results:
+        params, num_examples, id, acc, eod = res
+        weighted_weights.append( [layer * weights[id] for layer in params] )
+
+    # weighted_weights = [
+    #     [layer * new_weight[client] for layer in res[0]] for client, res in enumerate(results)
+    # ]
     # 
     weights_prime: NDArrays = [
         reduce(np.add, layer_updates) for layer_updates in zip(*weighted_weights)
@@ -317,17 +322,19 @@ class CustomFairFed(Strategy):
         weights_results = [
             (parameters_to_ndarrays(fit_res.parameters), 
              fit_res.num_examples, 
-             fit_res.metrics['id'], 
+             fit_res.metrics['id'],
              fit_res.metrics['acc'], 
              fit_res.metrics['eod'])
                 for _, fit_res in results]
 
-        print("LEN -------------------")
-        print(len(weights_results[0]))
-
         # Initialize current_weights in first server round
         if server_round == 1:
             self.current_weights = fedavg_weights(weights_results)
+
+        print("============= LOGGG")
+        print([val[2] for val in weights_results])
+        print(self.current_weights)
+        print("============= LOGGG")
 
         # weighted average of client parameters
         weights, parameters_aggregated = aggregate_fair(weights = self.current_weights, 
