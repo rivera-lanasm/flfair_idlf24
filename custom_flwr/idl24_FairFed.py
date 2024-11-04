@@ -84,7 +84,7 @@ def aggregate_fair(weights, results, beta) -> NDArrays:
         client_deltas[id] = delta
 
     # average delta, equation 6
-    ave_delta = np.mean(list(client_deltas.values))
+    ave_delta = np.mean(list(client_deltas.values()))
 
     # calculate new client parameter weights (unnormalized)
     new_weight = []
@@ -120,10 +120,10 @@ def fedavg_weights(results: List[Tuple[NDArrays, int]]) -> NDArrays:
     INITIALIZE weight as num_examples_i / total number examples
     """
     # Calculate the total number of examples used during training
-    num_examples_total = sum([num_examples for params, num_examples, acc, eod in results])
+    num_examples_total = sum([num_examples for params, num_examples, id, acc, eod in results])
     # Create a list of weights, each multiplied by the related number of examples
     weights = {}
-    for params, num_examples, acc, eod in results:
+    for params, num_examples, id, acc, eod in results:
         weights[id] = num_examples / num_examples_total
     return weights
 
@@ -321,6 +321,9 @@ class CustomFairFed(Strategy):
              fit_res.metrics['acc'], 
              fit_res.metrics['eod'])
                 for _, fit_res in results]
+
+        print("LEN -------------------")
+        print(len(weights_results[0]))
 
         # Initialize current_weights in first server round
         if server_round == 1:
