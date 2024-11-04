@@ -41,8 +41,9 @@ from flwr.common.logger import log
 from flwr.server.client_manager import ClientManager
 from flwr.server.client_proxy import ClientProxy
 
-from .aggregate import aggregate, aggregate_inplace, weighted_loss_avg
-from .strategy import Strategy
+# from .aggregate import aggregate, aggregate_inplace, weighted_loss_avg
+from flwr.server.strategy.aggregate import  weighted_loss_avg
+from flwr.server.strategy.strategy import Strategy
 
 
 WARNING_MIN_AVAILABLE_CLIENTS_TOO_LOW = """
@@ -119,12 +120,11 @@ def fedavg_weights(results: List[Tuple[NDArrays, int]]) -> NDArrays:
     INITIALIZE weight as num_examples_i / total number examples
     """
     # Calculate the total number of examples used during training
-    num_examples_total = sum([num_examples for params, num_examples, id, acc, eosd, wtpr, apsd in results])
+    num_examples_total = sum([num_examples for params, num_examples, acc, eod in results])
     # Create a list of weights, each multiplied by the related number of examples
     weights = {}
-    for params, num_examples, id, acc, eosd, wtpr, apsd in results:
+    for params, num_examples, acc, eod in results:
         weights[id] = num_examples / num_examples_total
-
     return weights
 
 
@@ -179,12 +179,12 @@ class CustomFairFed(Strategy):
         min_available_clients: int = 2,
         evaluate_fn: Optional[
             Callable[
-                [int, NDArrays, dict[str, Scalar]],
-                Optional[tuple[float, dict[str, Scalar]]],
+                [int, NDArrays, Dict[str, Scalar]],
+                Optional[Tuple[float, Dict[str, Scalar]]],
             ]
         ] = None,
-        on_fit_config_fn: Optional[Callable[[int], dict[str, Scalar]]] = None,
-        on_evaluate_config_fn: Optional[Callable[[int], dict[str, Scalar]]] = None,
+        on_fit_config_fn: Optional[Callable[[int], Dict[str, Scalar]]] = None,
+        on_evaluate_config_fn: Optional[Callable[[int], Dict[str, Scalar]]] = None,
         accept_failures: bool = True,
         initial_parameters: Optional[Parameters] = None,
         fit_metrics_aggregation_fn: Optional[MetricsAggregationFn] = None,
@@ -221,12 +221,12 @@ class CustomFairFed(Strategy):
         rep = f"FedAvg(accept_failures={self.accept_failures})"
         return rep
 
-    def num_fit_clients(self, num_available_clients: int) -> tuple[int, int]:
+    def num_fit_clients(self, num_available_clients: int) -> Tuple[int, int]:
         """Return the sample size and the required number of available clients."""
         num_clients = int(num_available_clients * self.fraction_fit)
         return max(num_clients, self.min_fit_clients), self.min_available_clients
 
-    def num_evaluation_clients(self, num_available_clients: int) -> tuple[int, int]:
+    def num_evaluation_clients(self, num_available_clients: int) -> Tuple[int, int]:
         """Use a fraction of available clients for evaluation."""
         num_clients = int(num_available_clients * self.fraction_evaluate)
         return max(num_clients, self.min_evaluate_clients), self.min_available_clients
@@ -241,7 +241,7 @@ class CustomFairFed(Strategy):
 
     def evaluate(
         self, server_round: int, parameters: Parameters
-    ) -> Optional[tuple[float, dict[str, Scalar]]]:
+    ) -> Optional[Tuple[float, Dict[str, Scalar]]]:
         """Evaluate model parameters using an evaluation function."""
         if self.evaluate_fn is None:
             # No evaluation function provided
@@ -255,7 +255,7 @@ class CustomFairFed(Strategy):
 
     def configure_fit(
         self, server_round: int, parameters: Parameters, client_manager: ClientManager
-    ) -> list[tuple[ClientProxy, FitIns]]:
+    ) -> List[Tuple[ClientProxy, FitIns]]:
         """Configure the next round of training."""
         config = {}
         if self.on_fit_config_fn is not None:
@@ -276,7 +276,7 @@ class CustomFairFed(Strategy):
 
     def configure_evaluate(
         self, server_round: int, parameters: Parameters, client_manager: ClientManager
-    ) -> list[tuple[ClientProxy, EvaluateIns]]:
+    ) -> List[Tuple[ClientProxy, EvaluateIns]]:
         """Configure the next round of evaluation."""
         # Do not configure federated evaluation if fraction eval is 0.
         if self.fraction_evaluate == 0.0:
@@ -303,9 +303,9 @@ class CustomFairFed(Strategy):
     def aggregate_fit(
         self,
         server_round: int,
-        results: list[tuple[ClientProxy, FitRes]],
-        failures: list[Union[tuple[ClientProxy, FitRes], BaseException]],
-    ) -> tuple[Optional[Parameters], dict[str, Scalar]]:
+        results: List[Tuple[ClientProxy, FitRes]],
+        failures: List[Union[Tuple[ClientProxy, FitRes], BaseException]],
+    ) -> Tuple[Optional[Parameters], Dict[str, Scalar]]:
         """Aggregate fit results using weighted average."""
         if not results:
             return None, {}
@@ -317,7 +317,7 @@ class CustomFairFed(Strategy):
         weights_results = [
             (parameters_to_ndarrays(fit_res.parameters), 
              fit_res.num_examples, 
-             fit_res.metrics['id'], 
+            #  fit_res.metrics['id'], 
              fit_res.metrics['acc'], 
              fit_res.metrics['eod'])
                 for _, fit_res in results]
@@ -348,9 +348,9 @@ class CustomFairFed(Strategy):
     def aggregate_evaluate(
         self,
         server_round: int,
-        results: list[tuple[ClientProxy, EvaluateRes]],
-        failures: list[Union[tuple[ClientProxy, EvaluateRes], BaseException]],
-    ) -> tuple[Optional[float], dict[str, Scalar]]:
+        results: List[Tuple[ClientProxy, EvaluateRes]],
+        failures: List[Union[Tuple[ClientProxy, EvaluateRes], BaseException]],
+    ) -> Tuple[Optional[float], Dict[str, Scalar]]:
         """Aggregate evaluation losses using weighted average."""
         if not results:
             return None, {}

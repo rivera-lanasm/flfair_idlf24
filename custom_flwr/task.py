@@ -27,10 +27,12 @@ def load_data():
     batch_size = 32
 
     ds = Dataset.from_pandas(trainset)
+
     partitioner = DirichletPartitioner(
         num_partitions=NUM_CLIENTS,
         partition_by="caucasian",
-        alpha=0.5,
+        # alpha=100,# high alpha, equal distribution
+        alpha=0.5, # low alpha, skeweed distribution
         min_partition_size=(len(trainset) // (4 * NUM_CLIENTS)),
         self_balancing=True,
         shuffle=True
