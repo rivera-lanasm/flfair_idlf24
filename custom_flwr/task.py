@@ -112,7 +112,8 @@ class Net(nn.Module):
     def forward(self, x):
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
-        x = torch.sigmoid(self.fc3(x))
+        x = self.fc3(x)
+        # x = torch.sigmoid(self.fc3(x))
         return x
 
 def compute_eod(preds, labels, sensitive_feature):
@@ -127,7 +128,8 @@ def compute_eod(preds, labels, sensitive_feature):
 
 def train(net, trainloader, epochs, lr, device):
     """Train the model on the training set and calculate EOD."""
-    criterion = nn.BCELoss()
+    # criterion = nn.BCELoss()
+    criterion =  nn.BCEWithLogitsLoss()
     optimizer = optim.Adam(net.parameters(), lr=lr)
     net.train()
     running_loss = 0.0
@@ -177,7 +179,8 @@ def train(net, trainloader, epochs, lr, device):
 def test(net, testloader, device):
     """Validate the model on the test set and calculate EOD."""
     net.to(device)
-    criterion = nn.BCELoss()
+    # criterion = nn.BCELoss()
+    criterion = nn.BCEWithLogitsLoss()
     correct, loss, total = 0, 0, 0
     all_preds, all_labels, all_sensitives = [], [], []
     
@@ -185,8 +188,6 @@ def test(net, testloader, device):
         for inputs, labels, sensitive_features in testloader:  # Include sensitive feature in loop
             inputs, labels = inputs.to(device), labels.to(device)
             outputs = net(inputs)
-            # print("=========== OOUTPUTSS ============")
-            # print(outputs)
             labels = labels.view(-1, 1)
             loss += criterion(outputs, labels).item() * inputs.size(0)
             predicted = (outputs >= 0.5).float()
