@@ -56,6 +56,7 @@ than or equal to the values of `min_fit_clients` and `min_evaluate_clients`.
 
 def aggregate_fair(weights, results, beta) -> NDArrays:
     """Compute weighted average."""
+    list_id = [id for params, num_examples, id, acc, eod in results]
     # client EOD metrics
     list_eod = [eod for params, num_examples, id, acc, eod in results]
     # Aggregate (Global) EOD metric stats
@@ -87,7 +88,6 @@ def aggregate_fair(weights, results, beta) -> NDArrays:
     ave_delta = np.mean(list(client_deltas.values()))
 
     # calculate new client parameter weights (unnormalized)
-    # new_weight = {}
     for client, res in enumerate(results):
         # unpack 
         params, num_examples, id, acc, eod = res
@@ -179,9 +179,9 @@ class CustomFairFed(Strategy):
         *,
         fraction_fit: float = 1.0,
         fraction_evaluate: float = 1.0,
-        min_fit_clients: int = 2,
-        min_evaluate_clients: int = 2,
-        min_available_clients: int = 2,
+        min_fit_clients: int = 10,
+        min_evaluate_clients: int = 10,
+        min_available_clients: int = 10,
         evaluate_fn: Optional[
             Callable[
                 [int, NDArrays, Dict[str, Scalar]],
@@ -330,11 +330,6 @@ class CustomFairFed(Strategy):
         # Initialize current_weights in first server round
         if server_round == 1:
             self.current_weights = fedavg_weights(weights_results)
-
-        print("============= LOGGG")
-        print([val[2] for val in weights_results])
-        print(self.current_weights)
-        print("============= LOGGG")
 
         # weighted average of client parameters
         weights, parameters_aggregated = aggregate_fair(weights = self.current_weights, 

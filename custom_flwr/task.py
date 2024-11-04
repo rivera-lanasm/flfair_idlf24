@@ -185,6 +185,8 @@ def test(net, testloader, device):
         for inputs, labels, sensitive_features in testloader:  # Include sensitive feature in loop
             inputs, labels = inputs.to(device), labels.to(device)
             outputs = net(inputs)
+            # print("=========== OOUTPUTSS ============")
+            # print(outputs)
             labels = labels.view(-1, 1)
             loss += criterion(outputs, labels).item() * inputs.size(0)
             predicted = (outputs >= 0.5).float()
