@@ -19,8 +19,9 @@ class FlowerClient(NumPyClient):
     """
 
     def __init__(
-        self, net, client_state: RecordSet, trainloader, valloader, local_epochs
+        self, net, client_state: RecordSet, trainloader, valloader, local_epochs, client_id
     ):
+        self.client_id = client_id  # Store the client ID
         self.net: Net = net
         self.client_state = client_state
         self.trainloader = trainloader
@@ -65,7 +66,7 @@ class FlowerClient(NumPyClient):
             # size of client data 
             len(self.trainloader.dataset),
             # metrics
-            {"train_loss": train_loss, "eod": eod, "acc": acc},
+            {"train_loss": train_loss, "eod": eod, "acc": acc, "id": self.client_id},
         )
 
     def _save_layer_weights_to_state(self):
@@ -129,15 +130,17 @@ def client_fn(context: Context):
     local_epochs = 1
     trainloader = get_train_data(context.node_config['partition-id'])
     valloader = get_val_data(context.node_config['partition-id'])
-    # Load data
 
+    # Use the partition ID as the client ID
+    client_id = context.node_config['partition-id']
+    
     # Return Client instance
     # We pass the state to persist information across
     # participation rounds. Note that each client always
     # receives the same Context instance (it's a 1:1 mapping)
     client_state = context.state
     return FlowerClient(
-        net, client_state, trainloader, valloader, local_epochs
+        net, client_state, trainloader, valloader, local_epochs, client_id
     ).to_client()
 
 # Flower ClientApp

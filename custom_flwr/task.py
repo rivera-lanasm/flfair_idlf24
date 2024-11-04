@@ -13,6 +13,7 @@ from datasets import Dataset
 import pandas as pd
 from flwr.common.typing import UserConfig
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, TensorDataset
 
 def load_data():
@@ -26,12 +27,16 @@ def load_data():
     trainset, testset = train_test_split(df, test_size=0.2)
     batch_size = 32
 
+    scaler = StandardScaler()
+
     ds = Dataset.from_pandas(trainset)
+
     partitioner = DirichletPartitioner(
         num_partitions=NUM_CLIENTS,
         partition_by="caucasian",
-        alpha=0.5,
-        min_partition_size=(len(trainset) // (4 * NUM_CLIENTS)),
+        # alpha=100,# high alpha, equal distribution
+        alpha=0.5, # low alpha, skeweed distribution
+        min_partition_size=(len(trainset) // (8 * NUM_CLIENTS)),
         self_balancing=True,
         shuffle=True
     )
@@ -100,20 +105,46 @@ def get_test_data():
     _, _, test_loader = load_data()
     return test_loader
 
+def initialize_weights(m):
+    if isinstance(m, nn.Linear):
+        nn.init.xavier_uniform_(m.weight)
+        nn.init.zeros_(m.bias)
+
+import torch.nn.functional as F
+
 class Net(nn.Module):
     def __init__(self):
         super().__init__()
         self.fc1 = nn.Linear(5, 16)
+        self.bn1 = nn.BatchNorm1d(16)
         self.fc2 = nn.Linear(16, 8)
+        self.bn2 = nn.BatchNorm1d(8)
         self.fc3 = nn.Linear(8, 1)
+        self.apply(initialize_weights)
 
     def forward(self, x):
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        x = torch.sigmoid(self.fc3(x))
+        x = F.leaky_relu(self.fc1(x))
+        x = F.leaky_relu(self.fc2(x))
+        x = self.fc3(x)
+        
+        # Replace NaNs in the output with 0.5 (or another default value)
+        x = torch.where(torch.isnan(x), torch.tensor(0.5, device=x.device), x)
         return x
 
+    def reset_weights(self):
+        # Reset weights if NaNs are found
+        self.apply(initialize_weights)
+
 def compute_eod(preds, labels, sensitive_feature):
+    # Convert lists to tensors if they aren't already
+    if isinstance(preds, list):
+        preds = torch.cat(preds)
+    if isinstance(labels, list):
+        labels = torch.cat(labels)
+    if isinstance(sensitive_feature, list):
+        sensitive_feature = torch.cat(sensitive_feature)
+
+    # Convert predictions to binary
     preds_binary = (preds >= 0.5).float()
     y_true_mask = (labels == 1).view(-1)
 
@@ -125,37 +156,57 @@ def compute_eod(preds, labels, sensitive_feature):
 
 def train(net, trainloader, epochs, lr, device):
     """Train the model on the training set and calculate EOD."""
-    criterion = nn.BCELoss()
+<<<<<<< HEAD
+    # criterion = nn.BCELoss()
+    criterion =  nn.BCEWithLogitsLoss()
+=======
+    criterion = nn.BCEWithLogitsLoss()
+>>>>>>> e6839e7 (FLWR Fix)
     optimizer = optim.Adam(net.parameters(), lr=lr)
     net.train()
     running_loss = 0.0
     total = 0
     correct = 0
-    
+    smoothing = 0.1
     # Store predictions and sensitive features for EOD calculation
     all_preds, all_labels, all_sensitives = [], [], []
     
     for _ in range(epochs):
-        for inputs, labels, sensitive_features in trainloader:  # Include sensitive feature in loop
+        for inputs, labels, sensitive_features in trainloader:
+            if len(torch.unique(labels)) == 1:
+                print("Skipping batch with single class.")
+                continue
+            
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
             outputs = net(inputs)
-            # accuracy
-            predicted = (outputs >= 0.5).float()
-            labels = labels.view(-1, 1)
+            
+            # Apply label smoothing
+            smoothed_labels = labels * (1 - smoothing) + 0.5 * smoothing
+            smoothed_labels = smoothed_labels.view(-1, 1)
+            loss = criterion(outputs, smoothed_labels)
+
+            # Update accuracy based on original labels for true measure
             total += labels.size(0)
-            correct += (predicted == labels).sum().item()
-            # loss
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item()
+            predicted = (torch.sigmoid(outputs) >= 0.5).float()  # Apply sigmoid for prediction threshold
+            correct += (predicted == labels.view(-1, 1)).sum().item()
 
             # Store outputs, labels, and sensitive attributes for EOD
             all_preds.append(outputs.detach().cpu())
             all_labels.append(labels.detach().cpu())
             all_sensitives.append(sensitive_features.cpu())
     
+            # Handle NaNs in loss by skipping backprop if NaNs detected
+            if torch.isnan(loss):
+                print("NaN detected in loss; resetting weights and skipping step.")
+                net.reset_weights()
+                continue            
+
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=1.0)
+            optimizer.step()
+            running_loss += loss.item()
+
     # Concatenate all batches for EOD calculation
     all_preds = torch.cat(all_preds)
     all_labels = torch.cat(all_labels)
@@ -171,11 +222,14 @@ def train(net, trainloader, epochs, lr, device):
     print(f"Avg Train Loss: {avg_trainloss} - EOD: {eod} - Accuracy: {accuracy}")
     return avg_trainloss, eod, accuracy
 
-
 def test(net, testloader, device):
     """Validate the model on the test set and calculate EOD."""
     net.to(device)
-    criterion = nn.BCELoss()
+<<<<<<< HEAD
+    # criterion = nn.BCELoss()
+=======
+>>>>>>> e6839e7 (FLWR Fix)
+    criterion = nn.BCEWithLogitsLoss()
     correct, loss, total = 0, 0, 0
     all_preds, all_labels, all_sensitives = [], [], []
     
@@ -184,6 +238,10 @@ def test(net, testloader, device):
             inputs, labels = inputs.to(device), labels.to(device)
             outputs = net(inputs)
             labels = labels.view(-1, 1)
+
+            # Replace nan in outputs with 0
+            outputs[outputs != outputs] = 0
+
             loss += criterion(outputs, labels).item() * inputs.size(0)
             predicted = (outputs >= 0.5).float()
             total += labels.size(0)

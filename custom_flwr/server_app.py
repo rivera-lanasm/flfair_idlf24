@@ -14,6 +14,7 @@ that Flower uses to call all your server-side code (for example, the strategy)
 import torch
 # from custom_flwr.strategy import FairFed
 from custom_flwr.idl24_FairFed import CustomFairFed as FairFed
+
 from custom_flwr.task import (
     Net,
     get_weights,
