@@ -119,6 +119,7 @@ class CustomFedAvg(FedAvg):
 class FairFed(FedAvg):
     def __init__(self, *args, **kwargs):
         self.beta = kwargs.pop("beta", 0.1)
+        self.ind_w = 0
         super().__init__(*args, **kwargs)
         
     def aggregate_evaluate(self, server_round, results, failures):
@@ -126,18 +127,26 @@ class FairFed(FedAvg):
         
         
         """
+        indf_scores = [r.metrics["indf"] for _,r in results if 'indf' in r.metrics] 
         eod_scores = [r.metrics["eod"] for _,r in results if 'eod' in r.metrics]
         client_sizes = [r.num_examples for _,r in results]
 
         # global EOD
         avg_eod = sum(eod_scores) / len(eod_scores) if eod_scores else 0
+        # global ind fairness
+        avg_indf = sum(indf_scores) / len(indf_scores) if indf_scores else 0
+
         # glbal Acc.
         # TODO 
         # init adj
         adjusted_weights = []
-        for eod, num_examples in zip(eod_scores, client_sizes):
-            # delta
-            dev = abs(eod - avg_eod)
+        for indf, eod, num_examples in zip(indf_scores, eod_scores, client_sizes):
+            # delta - group fairness
+            dev_group = abs(eod - avg_eod)
+            # delta - ind fairness
+            dev_ind = abs(indf - avg_indf)
+            # weighted delta 
+            dev = self.ind_w*dev_ind + (1-self.ind_w)*dev_group
             # 
             adjusted_weight = max(1 - self.beta * dev, 0)
             # 
@@ -148,9 +157,11 @@ class FairFed(FedAvg):
 
         aggregated_metrics = {
             'eod': sum(w * eod for w, eod in zip(norm_weights, eod_scores)),
+            'indf': sum(w * indf for w, eod in zip(norm_weights, indf_scores)),            
         }
         loss, metrics = super().aggregate_evaluate(server_round, results, failures)
         metrics.update(aggregated_metrics)
         print(f"Aggregated EOD: {aggregated_metrics['eod']}")
+        print(f"Aggregated Ind Fairness: {aggregated_metrics['indf']}")        
         return loss, metrics
     

@@ -154,14 +154,32 @@ def compute_eod(preds, labels, sensitive_feature):
     eod = p_a0 - p_a1
     return eod
 
+def compute_indfair(preds, labels):
+    # Convert lists to tensors if they aren't already
+    if isinstance(preds, list):
+        preds = torch.cat(preds)
+    if isinstance(labels, list):
+        labels = torch.cat(labels)
+
+    # Group predictions by the actual labels
+    preds_0 = preds[labels == 0]
+    preds_1 = preds[labels == 1]
+
+    # Compute mean predictions for each group
+    mean_preds_0 = preds_0.mean().item()
+    mean_preds_1 = preds_1.mean().item()
+
+    # Compute squared differences
+    squared_diff_0 = ((preds_0 - mean_preds_0) ** 2).mean().item()
+    squared_diff_1 = ((preds_1 - mean_preds_1) ** 2).mean().item()
+
+    # Average the squared differences
+    avg_squared_diff = (squared_diff_0 + squared_diff_1) / 2
+    return avg_squared_diff
+ 
 def train(net, trainloader, epochs, lr, device):
     """Train the model on the training set and calculate EOD."""
-<<<<<<< HEAD
-    # criterion = nn.BCELoss()
-    criterion =  nn.BCEWithLogitsLoss()
-=======
     criterion = nn.BCEWithLogitsLoss()
->>>>>>> e6839e7 (FLWR Fix)
     optimizer = optim.Adam(net.parameters(), lr=lr)
     net.train()
     running_loss = 0.0
@@ -212,6 +230,9 @@ def train(net, trainloader, epochs, lr, device):
     all_labels = torch.cat(all_labels)
     all_sensitives = torch.cat(all_sensitives)
     
+    # Calculate Ind Fairness 
+    indfair = compute_indfair(all_preds, all_labels)
+
     # Calculate EOD
     eod = compute_eod(all_preds, all_labels, all_sensitives)
     # avg training loss 
@@ -219,16 +240,13 @@ def train(net, trainloader, epochs, lr, device):
     # avg accuracy
     accuracy = correct / total
     
-    print(f"Avg Train Loss: {avg_trainloss} - EOD: {eod} - Accuracy: {accuracy}")
-    return avg_trainloss, eod, accuracy
+    print(f"Avg Train Loss: {avg_trainloss} - EOD: {eod} - Accuracy: {accuracy} - Ind Fair: {indfair}")
+    return avg_trainloss, eod, accuracy, indfair
 
 def test(net, testloader, device):
     """Validate the model on the test set and calculate EOD."""
     net.to(device)
-<<<<<<< HEAD
     # criterion = nn.BCELoss()
-=======
->>>>>>> e6839e7 (FLWR Fix)
     criterion = nn.BCEWithLogitsLoss()
     correct, loss, total = 0, 0, 0
     all_preds, all_labels, all_sensitives = [], [], []
@@ -261,10 +279,13 @@ def test(net, testloader, device):
     all_labels = torch.cat(all_labels)
     all_sensitives = torch.cat(all_sensitives)
     
+    # Calculate Ind Fairness 
+    indfair = compute_indfair(all_preds, all_labels)
+
     # Calculate EOD
     eod = compute_eod(all_preds, all_labels, all_sensitives)
-    print(f"Test Accuracy: {accuracy} - Test Loss: {avg_loss} - EOD: {eod}")
-    return avg_loss, accuracy, eod
+    print(f"Test Accuracy: {accuracy} - Test Loss: {avg_loss} - EOD: {eod} - IndFair: {indfair}")
+    return avg_loss, accuracy, eod, indfair
 
 def get_weights(net):
     """

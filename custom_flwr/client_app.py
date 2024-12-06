@@ -49,7 +49,7 @@ class FlowerClient(NumPyClient):
         # had at the end of the last fit() round it participated in
         self._load_layer_weights_from_state()
 
-        train_loss, eod, acc = train(
+        train_loss, eod, acc, indfair = train(
             self.net,
             self.trainloader,
             self.local_epochs,
@@ -66,7 +66,8 @@ class FlowerClient(NumPyClient):
             # size of client data 
             len(self.trainloader.dataset),
             # metrics
-            {"train_loss": train_loss, "eod": eod, "acc": acc, "id": self.client_id},
+            {"train_loss": train_loss, "eod": eod, "indfair":indfair,
+             "acc": acc, "id": self.client_id},
         )
 
     def _save_layer_weights_to_state(self):
@@ -106,8 +107,8 @@ class FlowerClient(NumPyClient):
         # Override weights in classification layer with those this client
         # had at the end of the last fit() round it participated in
         self._load_layer_weights_from_state()
-        loss, accuracy, eod = test(self.net, self.valloader, self.device)
-        return loss, len(self.valloader.dataset), {"accuracy": accuracy, "eod": eod}
+        loss, accuracy, eod, indfair = test(self.net, self.valloader, self.device)
+        return loss, len(self.valloader.dataset), {"accuracy": accuracy, "eod": eod, "indfair":indfair}
 
 def client_fn(context: Context):
     """

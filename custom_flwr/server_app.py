@@ -38,8 +38,8 @@ def gen_evaluate_fn(testloader: DataLoader,
         net = Net()
         set_weights(net, parameters_ndarrays)
         net.to(device)
-        loss, accuracy, eod = test(net, testloader, device=device)
-        return loss, {"centralized_accuracy": accuracy, "eod": eod}
+        loss, accuracy, eod, indf = test(net, testloader, device=device)
+        return loss, {"centralized_accuracy": accuracy, "eod": eod, "indf":indf}
 
     return evaluate
 
@@ -87,7 +87,10 @@ def server_fn(context):
         on_fit_config_fn=on_fit_config,
         evaluate_fn=gen_evaluate_fn(testloader, device=server_device),
         evaluate_metrics_aggregation_fn=weighted_average,
+        # weight on fairness
         beta=0.1
+        # weight on ind fairness
+        # ind_w = 0
     )
 
     config = ServerConfig(num_rounds=num_rounds)
