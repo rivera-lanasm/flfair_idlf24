@@ -16,14 +16,13 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, TensorDataset
 
-def load_data():
-    global train_loaders, val_loaders, test_loader
+def load_data(config):
+    # global train_loaders, val_loaders, test_loader
 
-    if 'trainloaders' in globals():
-        return train_loaders, val_loaders, test_loader
+    # if 'trainloaders' in globals():
+    #     return train_loaders, val_loaders, test_loader
     df = pd.read_csv('.kaggle/data/propublicaCompassRecividism_data_fairml.csv/propublica_data_for_fairml.csv')
     df['caucasian'] = ((df['African_American'] + df['Asian'] + df['Hispanic'] + df['Native_American'] + df['Other']) == 0).astype(int)
-    NUM_CLIENTS = 10
     trainset, testset = train_test_split(df, test_size=0.2)
     batch_size = 32
 
@@ -32,18 +31,17 @@ def load_data():
     ds = Dataset.from_pandas(trainset)
 
     partitioner = DirichletPartitioner(
-        num_partitions=NUM_CLIENTS,
-        partition_by="caucasian",
-        # alpha=100,# high alpha, equal distribution
-        alpha=0.5, # low alpha, skeweed distribution
-        min_partition_size=(len(trainset) // (8 * NUM_CLIENTS)),
+        num_partitions=config["num_clients"],
+        partition_by=config["sensitive_cat"],
+        alpha=config["alpha"],
+        min_partition_size=(len(trainset) // (2 * config["num_clients"])),
         self_balancing=True,
         shuffle=True
     )
 
     partitioner.dataset = ds
     datasets = []
-    for i in range(NUM_CLIENTS):
+    for i in range(config["num_clients"]):
         curr_partition = partitioner.load_partition(i)
         datasets.append(curr_partition.to_pandas())
 
@@ -58,7 +56,7 @@ def load_data():
         sensitive_feature = ds['caucasian'].values
 
         train_x, val_x, train_y, val_y, sensitive_train, sensitive_val = train_test_split(
-            train_x, train_y, sensitive_feature, test_size=0.25, shuffle=True, stratify=train_y, random_state=42
+            train_x, train_y, sensitive_feature, test_size=0.2, shuffle=True, stratify=train_y, random_state=42
         )
         
         train_x_tensor = torch.from_numpy(train_x).float()
@@ -101,8 +99,8 @@ def get_val_data(partition_id):
     _, val_loaders, _ = load_data()
     return val_loaders[partition_id]
 
-def get_test_data():
-    _, _, test_loader = load_data()
+def get_test_data(config):
+    _, _, test_loader = load_data(config)
     return test_loader
 
 def initialize_weights(m):

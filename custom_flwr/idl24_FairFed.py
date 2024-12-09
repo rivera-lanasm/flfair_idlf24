@@ -200,7 +200,9 @@ class CustomFairFed(Strategy):
         evaluate_metrics_aggregation_fn: Optional[MetricsAggregationFn] = None,
         inplace: bool = True,
         # betas
-        beta: float
+        beta: float,
+        # gamma
+        gamma: float
     ) -> None:
         super().__init__()
 

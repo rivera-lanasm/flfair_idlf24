@@ -73,11 +73,14 @@ def server_fn(context):
     fraction_fit = context.run_config["fraction-fit"]
     fraction_eval = context.run_config["fraction-evaluate"]
     server_device = context.run_config["server-device"]
+    beta = context.run_config["beta"]
+    gamma = context.run_config["gamma"]
+    config = context.run_config["config"]
 
     # Initialize model parameters
     ndarrays = get_weights(Net())
     parameters = ndarrays_to_parameters(ndarrays)
-    testloader = get_test_data()
+    testloader = get_test_data(config)
 
     # Define strategy
     strategy = FairFed(
@@ -88,9 +91,9 @@ def server_fn(context):
         evaluate_fn=gen_evaluate_fn(testloader, device=server_device),
         evaluate_metrics_aggregation_fn=weighted_average,
         # weight on fairness
-        beta=0.1
+        beta=beta,
         # weight on ind fairness
-        # ind_w = 0
+        gamma = gamma
     )
 
     config = ServerConfig(num_rounds=num_rounds)
