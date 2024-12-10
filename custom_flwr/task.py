@@ -16,6 +16,16 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, TensorDataset
 
+# =====================================
+# =========== PARAMS ==================
+
+ALPHA = 100
+
+# =====================================
+# =====================================
+
+
+
 def load_data():
     global train_loaders, val_loaders, test_loader
 
@@ -35,8 +45,8 @@ def load_data():
         num_partitions=NUM_CLIENTS,
         partition_by="caucasian",
         # alpha=100,# high alpha, equal distribution
-        alpha=0.5, # low alpha, skeweed distribution
-        min_partition_size=(len(trainset) // (8 * NUM_CLIENTS)),
+        alpha=ALPHA, # low alpha, skeweed distribution
+        min_partition_size=(len(trainset) // (2 * NUM_CLIENTS)),
         self_balancing=True,
         shuffle=True
     )
