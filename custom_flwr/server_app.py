@@ -28,6 +28,8 @@ from datasets import load_dataset
 from flwr.common import Context, ndarrays_to_parameters
 from flwr.server import ServerApp, ServerAppComponents, ServerConfig
 
+BETA = 0.1
+GAMMA = .5
 
 def gen_evaluate_fn(testloader: DataLoader,
                     device: torch.device):
@@ -88,9 +90,9 @@ def server_fn(context):
         evaluate_fn=gen_evaluate_fn(testloader, device=server_device),
         evaluate_metrics_aggregation_fn=weighted_average,
         # weight on fairness
-        beta=0.1
+        beta=BETA,
         # weight on ind fairness
-        # ind_w = 0
+        gamma = GAMMA
     )
 
     config = ServerConfig(num_rounds=num_rounds)
