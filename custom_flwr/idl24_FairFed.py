@@ -53,17 +53,20 @@ than or equal to the values of `min_fit_clients` and `min_evaluate_clients`.
 """
 
 
-def aggregate_fair(weights, results, beta) -> NDArrays:
+def aggregate_fair(weights, results, beta, gamma) -> NDArrays:
     """Compute weighted average."""
-    list_id = [id for params, num_examples, id, acc, eod in results]
+    list_id = [id for params, num_examples, id, acc, eod, indf in results]
     # client EOD metrics
-    list_eod = [eod for params, num_examples, id, acc, eod in results]
+    list_eod = [eod for params, num_examples, id, acc, eod, indf in results]
+    # client Indf metrics
+    list_indf = [indf for params, num_examples, id, acc, eod, indf in results]
     # Aggregate (Global) EOD metric stats
     avg_eod = 0 if len(list_eod) == 0 else np.mean(list_eod)
     max_eod = 0 if len(list_eod) == 0 else max(list_eod)
+    avg_indf = 0 if len(list_indf) == 0 else np.mean(list_indf)
 
     # client Accuracy metrics
-    list_acc = [acc for params, num_examples, id, acc, eod in results]
+    list_acc = [acc for params, num_examples, id, acc, eod, indf in results]
     # Aggregate (Global) Acc metric stats
     avg_acc = 0 if len(list_acc) == 0 else np.mean(list_acc)
     max_acc = 0 if len(list_acc) == 0 else max(list_acc)
@@ -71,15 +74,21 @@ def aggregate_fair(weights, results, beta) -> NDArrays:
     # capture client deltas
     client_deltas = {}
     for client, res in enumerate(results):
-        params, num_examples, id, acc, eod = res
+        params, num_examples, id, acc, eod, indf = res
         metric, avg_metric = eod, avg_eod 
         # Use accuracy when metric is NaN
         if np.isnan(metric):
             metric = acc
             avg_metric = avg_acc
         # Use np.nan_to_num to handle NaNs in delta calculation
-        delta = abs(np.nan_to_num(metric - avg_metric, nan=0.0))
-        client_deltas[id] = delta
+        # delta = abs(np.nan_to_num(metric - avg_metric, nan=0.0))
+        # client_deltas[id] = delta
+        # 1) EOD delta
+        delta_eod = abs(np.nan_to_num(metric - avg_metric, nan=0.0))
+        # 2) ind fairness delta 
+        delta_indf = abs(np.nan_to_num(indf - avg_indf, nan=0.0))
+        # weighted avg delta
+        client_deltas[id] = gamma*delta_indf + (1 - gamma)*delta_eod
 
     # average delta, equation 6
     ave_delta = np.mean(list(client_deltas.values()))
@@ -108,7 +117,7 @@ def aggregate_fair(weights, results, beta) -> NDArrays:
     # weighting the paramters for each client by new_weights
     weighted_weights = []
     for res in results:
-        params, num_examples, id, acc, eod = res
+        params, num_examples, id, acc, eod, indf = res
         if id in weights:
             weighted_weights.append([layer * weights[id] for layer in params] )
         else:
@@ -200,7 +209,9 @@ class CustomFairFed(Strategy):
         evaluate_metrics_aggregation_fn: Optional[MetricsAggregationFn] = None,
         inplace: bool = True,
         # betas
-        beta: float
+        beta: float,
+        # gamma
+        gamma: float
     ) -> None:
         super().__init__()
 
@@ -333,7 +344,8 @@ class CustomFairFed(Strategy):
                 fit_res.num_examples,
                 fit_res.metrics['id'],
                 np.nan_to_num(fit_res.metrics['acc'], nan=0.0),  # Replace NaNs in accuracy
-                np.nan_to_num(fit_res.metrics['eod'], nan=0.0)   # Replace NaNs in EOD
+                np.nan_to_num(fit_res.metrics['eod'], nan=0.0),   # Replace NaNs in EOD
+                np.nan_to_num(fit_res.metrics['indf'], nan=0.0)   # Replace NaNs in indf
             )
             for _, fit_res in results
         ]
@@ -354,7 +366,8 @@ class CustomFairFed(Strategy):
         # weighted average of client parameters
         weights, parameters_aggregated = aggregate_fair(weights = self.current_weights, 
                                                         results = weights_results, 
-                                                        beta = self.beta)
+                                                        beta = self.beta,
+                                                        gamma = self.gamma)
         parameters_aggregated = ndarrays_to_parameters(parameters_aggregated)
 
         # weights is returned by aggregate_fair so we can do this update

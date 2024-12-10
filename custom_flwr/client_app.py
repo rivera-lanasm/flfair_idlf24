@@ -128,7 +128,7 @@ def client_fn(context: Context):
     # Load model and data
     net = Net()
     # local epochs
-    local_epochs = 1
+    local_epochs = 10
     trainloader = get_train_data(context.node_config['partition-id'])
     valloader = get_val_data(context.node_config['partition-id'])
 
