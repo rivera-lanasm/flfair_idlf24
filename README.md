@@ -9,5 +9,5 @@ Please keep things organized.
 - `custom_flwr`: Custom flwr code to implement our FairFed methods.
 - `flwr.ipynb`: Notebook that runs FL experiment. To replicate our results, run this notebook.
 
-Changes to alpha are made in `flwr.ipynb`.
-Changes to beta and gamma are made in `custom_flwr\server_app.py`.
+- Changes to alpha are made in `flwr.ipynb` and `custom_flwr\task.py`.
+- Changes to beta and gamma are made in `custom_flwr\server_app.py`.
